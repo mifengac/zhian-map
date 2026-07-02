@@ -1,0 +1,59 @@
+/* index.css */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #0b0f19;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* 覆盖 Leaflet 地图默认的一些样式控制 */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #0d131f !important;
+}
+
+/* 自定义 Leaflet 地图控制按钮样式 */
+.leaflet-control-zoom {
+  border: 1px solid rgba(51, 65, 85, 0.6) !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4) !important;
+}
+
+.leaflet-control-zoom-in, .leaflet-control-zoom-out {
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  color: #f8fafc !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6) !important;
+}
+
+.leaflet-control-zoom-in:hover, .leaflet-control-zoom-out:hover {
+  background-color: #38bdf8 !important;
+  color: #0f172a !important;
+}
+
+.leaflet-bar a.leaflet-disabled {
+  background-color: rgba(15, 23, 42, 0.5) !important;
+  color: #64748b !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.8) !important;
+  color: #64748b !important;
+}
+
+.leaflet-control-attribution a {
+  color: #38bdf8 !important;
+}
