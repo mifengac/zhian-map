@@ -22,3 +22,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Large files and archives
+yf-map-latest.tar
+*.tar
+*.tar.gz
+*.zip
+*.tgz
+*.rar
+*.gz
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# TypeScript build info
+*.tsbuildinfo
