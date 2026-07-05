@@ -35,8 +35,8 @@ import policeData from './police_stations.json';
 interface DbIncident {
   caseno: string;
   calltime: string;
-  longitude: number;
-  latitude: number;
+  lngofcriterion: number;
+  latofcriterion: number;
   neworicharasubclass: string;
   newcharasubclass: string;
   cmdid: string;
@@ -126,13 +126,16 @@ const gcj02ToWgs84 = (lng: number, lat: number): [number, number] => {
 };
 
 const DISTRICTS = {
-  city: { name: '云浮市 (全市域)', center: [22.9298, 112.0444] as [number, number], zoom: 10 },
+  city: { name: '云浮市 (全市域)', center: [22.9298, 112.0444] as [number, number], zoom: 12 },
   yuncheng: { name: '云城区', center: [22.9298, 112.0444] as [number, number], zoom: 13 },
   yunan: { name: '云安区', center: [23.0093, 111.9515] as [number, number], zoom: 13 },
   xinxing: { name: '新兴县', center: [22.6974, 112.2307] as [number, number], zoom: 13 },
   yunanxian: { name: '郁南县', center: [23.2303, 111.5332] as [number, number], zoom: 13 },
   luoding: { name: '罗定市', center: [22.7688, 111.5696] as [number, number], zoom: 13 },
 };
+
+const CITY_BOUNDS: L.LatLngBoundsExpression = [[22.30, 111.00], [23.40, 112.60]];
+const HIGH_DETAIL_BOUNDS = L.latLngBounds([22.90, 112.00], [22.96, 112.09]);
 
 function App() {
   const mapRef = useRef<L.Map | null>(null);
@@ -156,16 +159,22 @@ function App() {
   const [subclassMode, setSubclassMode] = useState<'原始' | '确认'>('确认'); // 默认确认警情
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // 4. 用户指定需求：时间轴控制
+  // 4. 用户指定与设计：时空范围精细研判状态 (如 6 月份以来 21-23点)
+  const [startDate, setStartDate] = useState('2026-06-01');
+  const [endDate, setEndDate] = useState('2026-07-05');
+  const [startHour, setStartHour] = useState<number>(0);
+  const [endHour, setEndHour] = useState<number>(23);
+
+  // 5. 用户指定需求：时间轴控制
   const [selectedHour, setSelectedHour] = useState<number | 'all'>('all'); // 全天或某小时
   const [isPlaying, setIsPlaying] = useState(false);
   const timerRef = useRef<number | null>(null);
 
-  // 5. 数据大屏增强面板
+  // 6. 数据大屏增强面板
   const [selectedIncident, setSelectedIncident] = useState<DbIncident | null>(null); // 被选中的警情详情
   const [showSchemaModal, setShowSchemaModal] = useState(false); // 字段释义弹窗
 
-  // 6. 图层控制
+  // 7. 图层控制
   const [isHeatmapActive, setIsHeatmapActive] = useState(false);
   const [isClusteringActive, setIsClusteringActive] = useState(true);
   const [showPoliceStations, setShowPoliceStations] = useState(true);
@@ -173,6 +182,11 @@ function App() {
   const [isDarkMap, setIsDarkMap] = useState(true);
 
   const isGcjMap = true; // 强制启用纠偏
+  const getMapLatLng = (lng: number, lat: number): [number, number] => {
+    if (!isGcjMap) return [lat, lng];
+    const [gcjLng, gcjLat] = wgs84ToGcj02(lng, lat);
+    return [gcjLat, gcjLng];
+  };
 
   // 交互打标
   const [isAddMode, setIsAddMode] = useState(false);
@@ -223,27 +237,52 @@ function App() {
   useEffect(() => {
     if (mapRef.current) return;
 
+    // 默认限制在云浮市全市域范围
     const map = L.map('map', {
       center: DISTRICTS.city.center,
       zoom: DISTRICTS.city.zoom,
-      minZoom: 6,
+      minZoom: 12,
       maxZoom: 18,
+      maxBounds: CITY_BOUNDS,
       zoomControl: false
     });
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    const tileLayer = L.tileLayer('./tiles/gaode/{z}/{x}/{y}.png', {
-      attribution: '&copy; 云浮市公安局立体巡防管控底图'
+    // 透明 1x1 像素占位符，用来平滑替代加载失败（404）的瓦片，防止地图上显示裂图图标
+    const transparentTile = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+    // 1. 全市域中低精度瓦片图层 (12-13 级)
+    const lowZoomLayer = L.tileLayer('./tiles/gaode/{z}/{x}/{y}.png', {
+      minZoom: 12,
+      maxZoom: 13,
+      bounds: [[22.36, 111.05], [23.32, 112.52]], // 限制在全市域
+      attribution: '&copy; 云浮市局立体巡防管控底图'
     }).addTo(map);
 
-    tileLayerRef.current = tileLayer;
+    lowZoomLayer.on('tileerror', (e: any) => {
+      e.tile.src = transparentTile;
+    });
+
+    // 2. 云城区市中心高精度瓦片图层 (14-18 级)
+    const highZoomLayer = L.tileLayer('./tiles/gaode/{z}/{x}/{y}.png', {
+      minZoom: 14,
+      maxZoom: 18,
+      bounds: [[22.91, 112.01], [22.95, 112.08]], // 严格限制在已下载的云城区核心区
+      attribution: '&copy; 云浮市中心巡防高精底图'
+    }).addTo(map);
+
+    highZoomLayer.on('tileerror', (e: any) => {
+      e.tile.src = transparentTile;
+    });
+
+    tileLayerRef.current = lowZoomLayer;
     mapRef.current = map;
 
     // 暗黑滤镜
-    const tileContainer = tileLayer.getContainer();
-    if (tileContainer && isDarkMap) {
-      tileContainer.classList.add('dark-map-tiles');
+    const tilePane = map.getPane('tilePane');
+    if (tilePane && isDarkMap) {
+      tilePane.classList.add('dark-map-tiles');
     }
 
     clusterGroupRef.current = L.markerClusterGroup({
@@ -276,13 +315,13 @@ function App() {
 
   // 监听滤镜控制
   useEffect(() => {
-    if (!tileLayerRef.current) return;
-    const tileContainer = tileLayerRef.current.getContainer();
-    if (tileContainer) {
+    if (!mapRef.current) return;
+    const tilePane = mapRef.current.getPane('tilePane');
+    if (tilePane) {
       if (isDarkMap) {
-        tileContainer.classList.add('dark-map-tiles');
+        tilePane.classList.add('dark-map-tiles');
       } else {
-        tileContainer.classList.remove('dark-map-tiles');
+        tilePane.classList.remove('dark-map-tiles');
       }
     }
   }, [isDarkMap]);
@@ -417,10 +456,16 @@ function App() {
       const targetSubclass = subclassMode === '确认' ? c.newcharasubclass : c.neworicharasubclass;
       if (!activeSubclasses.has(targetSubclass)) return false;
 
-      // 2. 时间轴过滤
+      // 2. 日期范围过滤
+      const callDateStr = c.calltime.substring(0, 10);
+      if (callDateStr < startDate || callDateStr > endDate) return false;
+
+      // 3. 时段范围与底部分时轴过滤 (分时轴优先级高于时段范围)
+      const hour = parseInt(c.calltime.substring(11, 13), 10);
       if (selectedHour !== 'all') {
-        const hour = new Date(c.calltime).getHours();
         if (hour !== selectedHour) return false;
+      } else {
+        if (hour < startHour || hour > endHour) return false;
       }
 
       // 3. 关键字模糊搜索
@@ -462,7 +507,7 @@ function App() {
       const style = getStyleForIncident(c);
       
       // GCJ02 空间投影转换
-      const [renderedLat, renderedLng] = isGcjMap ? wgs84ToGcj02(c.longitude, c.latitude) : [c.latitude, c.longitude];
+      const [renderedLat, renderedLng] = getMapLatLng(c.lngofcriterion, c.latofcriterion);
 
       const svgHtml = `
         <svg width="32" height="38" viewBox="0 0 32 38" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0px 4px 8px rgba(0,0,0,0.5));">
@@ -512,7 +557,7 @@ function App() {
     // 绘制热力图
     if (isHeatmapActive) {
       const heatPoints = filteredIncidents.map(c => {
-        const [mapLat, mapLng] = isGcjMap ? wgs84ToGcj02(c.longitude, c.latitude) : [c.latitude, c.longitude];
+        const [mapLat, mapLng] = getMapLatLng(c.lngofcriterion, c.latofcriterion);
         return [mapLat, mapLng, 0.85] as [number, number, number];
       });
       heatmapLayerRef.current = L.heatLayer(heatPoints, {
@@ -541,8 +586,10 @@ function App() {
   const locateIncident = (c: DbIncident) => {
     setSelectedIncident(c);
     if (!mapRef.current) return;
-    const [mapLat, mapLng] = isGcjMap ? wgs84ToGcj02(c.longitude, c.latitude) : [c.latitude, c.longitude];
-    mapRef.current.flyTo([mapLat, mapLng], 16, { animate: true, duration: 1 });
+    const [mapLat, mapLng] = getMapLatLng(c.lngofcriterion, c.latofcriterion);
+    const target = L.latLng(mapLat, mapLng);
+    const targetZoom = HIGH_DETAIL_BOUNDS.contains(target) ? 16 : 13;
+    mapRef.current.flyTo(target, targetZoom, { animate: true, duration: 1 });
     
     setTimeout(() => {
       if (!mapRef.current) return;
@@ -569,8 +616,8 @@ function App() {
     const newCase: DbIncident = {
       caseno: `JQ-${Date.now().toString().slice(-6)}`,
       calltime: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      longitude: tempLatLng.lng,
-      latitude: tempLatLng.lat,
+      lngofcriterion: tempLatLng.lng,
+      latofcriterion: tempLatLng.lat,
       neworicharasubclass: targetSubclass,
       newcharasubclass: targetSubclass,
       cmdid: "445302",
@@ -628,30 +675,32 @@ function App() {
     );
   };
 
-  if (loading) {
-    return (
-      <div style={{
-        width: '100vw',
-        height: '100vh',
-        backgroundColor: '#0b0f19',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#38bdf8',
-        fontSize: '18px',
-        fontWeight: 'bold',
-        fontFamily: 'sans-serif',
-        gap: '15px'
-      }}>
-        <Shield className="pulse-indicator" style={{ width: 40, height: 40 }} />
-        <span>正在载入金仓数据库离线警情数据...</span>
-      </div>
-    );
-  }
-
   return (
     <div className="dashboard-container">
+      {/* 动态数据载入遮罩层 */}
+      {loading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#0b0f19',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#38bdf8',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          fontFamily: 'sans-serif',
+          gap: '15px',
+          zIndex: 99999
+        }}>
+          <Shield className="pulse-indicator" style={{ width: 40, height: 40 }} />
+          <span>正在载入金仓数据库离线警情数据...</span>
+        </div>
+      )}
       {/* 左侧面板 */}
       <aside className="sidebar">
         <div className="header-box">
@@ -772,6 +821,121 @@ function App() {
                   确认警情编码 (newcharasubclass)
                 </label>
               </div>
+            </div>
+          </section>
+
+          {/* 核心需求：时空范围精细研判 */}
+          <section className="card">
+            <h3 className="card-title"><Settings size={16} style={{ color: '#38bdf8' }} /> 时空范围精细研判</h3>
+            
+            {/* 日期范围选择 */}
+            <div className="form-group" style={{ marginBottom: '12px' }}>
+              <label>日期范围过滤 (年-月-日)</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input 
+                  type="date" 
+                  value={startDate} 
+                  onChange={(e) => setStartDate(e.target.value)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(51, 65, 85, 0.5)',
+                    borderRadius: '4px',
+                    color: 'white',
+                    padding: '4px 8px',
+                    fontSize: '12px'
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#64748b' }}>至</span>
+                <input 
+                  type="date" 
+                  value={endDate} 
+                  onChange={(e) => setEndDate(e.target.value)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(51, 65, 85, 0.5)',
+                    borderRadius: '4px',
+                    color: 'white',
+                    padding: '4px 8px',
+                    fontSize: '12px'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* 时段范围选择 */}
+            <div className="form-group" style={{ marginBottom: '12px' }}>
+              <label>接警时段范围 (24小时制)</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  value={startHour}
+                  onChange={(e) => setStartHour(Number(e.target.value))}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(51, 65, 85, 0.5)',
+                    borderRadius: '4px',
+                    color: 'white',
+                    padding: '4px 8px',
+                    fontSize: '12px'
+                  }}
+                >
+                  {Array.from({ length: 24 }).map((_, h) => (
+                    <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>至</span>
+                <select
+                  value={endHour}
+                  onChange={(e) => setEndHour(Number(e.target.value))}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(51, 65, 85, 0.5)',
+                    borderRadius: '4px',
+                    color: 'white',
+                    padding: '4px 8px',
+                    fontSize: '12px'
+                  }}
+                >
+                  {Array.from({ length: 24 }).map((_, h) => (
+                    <option key={h} value={h}>{h.toString().padStart(2, '0')}:59</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* 快捷时段过滤 */}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                className="timeline-btn"
+                style={{ flex: 1, fontSize: '11px', padding: '6px 4px', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8' }}
+                onClick={() => {
+                  setStartDate('2026-06-01');
+                  setEndDate('2026-07-05');
+                  setStartHour(21);
+                  setEndHour(23);
+                  setSelectedLeixings(['打架斗殴']);
+                }}
+              >
+                🚨 夜间高峰 (6月以来 21-23点)
+              </button>
+              <button
+                type="button"
+                className="timeline-btn"
+                style={{ flex: 1, fontSize: '11px', padding: '6px 4px', background: 'transparent', border: '1px solid rgba(100,116,139,0.3)' }}
+                onClick={() => {
+                  setStartDate('2026-06-01');
+                  setEndDate('2026-07-05');
+                  setStartHour(0);
+                  setEndHour(23);
+                  setSelectedLeixings(configs.map(c => c.leixing));
+                }}
+              >
+                🔄 恢复全天全期
+              </button>
             </div>
           </section>
 
@@ -941,12 +1105,28 @@ function App() {
             <span className="slider-label">23:00</span>
           </div>
 
-          <div className="timeline-indicator">
-            当前时段: {selectedHour === 'all' ? (
-              <span className="time-highlight">全天 24 小时累计警情分布</span>
-            ) : (
-              <span className="time-highlight">{selectedHour.toString().padStart(2, '0')}:00 - {selectedHour.toString().padStart(2, '0')}:59 时段警情</span>
-            )}
+          <div className="timeline-indicator" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div>
+              当前展示: {selectedHour === 'all' ? (
+                <span className="time-highlight">全天累计（或左侧设定时空段）</span>
+              ) : (
+                <span className="time-highlight">{selectedHour.toString().padStart(2, '0')}:00 - {selectedHour.toString().padStart(2, '0')}:59 时段</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="time-highlight" style={{ 
+                backgroundColor: filteredIncidents.length > 0 ? 'rgba(56,189,248,0.15)' : 'rgba(239,68,68,0.15)', 
+                color: filteredIncidents.length > 0 ? '#38bdf8' : '#ef4444', 
+                border: filteredIncidents.length > 0 ? '1px solid rgba(56,189,248,0.2)' : '1px solid rgba(239,68,68,0.2)'
+              }}>
+                当前时段警情: {filteredIncidents.length} 起
+              </span>
+              {filteredIncidents.length === 0 && (
+                <span style={{ fontSize: '11px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  ⚠️ 该时段暂无符合筛选条件的警情
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

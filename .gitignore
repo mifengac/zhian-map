@@ -39,3 +39,15 @@ yf-map-latest.tar
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Local generated data files and backups (already tracked under src/assets)
+incidents.json
+case_type_config.json
+public/incidents.json
+public/case_type_config.json
+
+# Offline map tiles
+tiles/
+
+# Debug and test screenshots
+screenshot.png
