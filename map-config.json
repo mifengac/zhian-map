@@ -1,0 +1,3 @@
+{
+  "tileUrl": "http://{host}:5099/tiles/gaode/{z}/{x}/{y}.png"
+}

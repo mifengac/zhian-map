@@ -135,7 +135,6 @@ const DISTRICTS = {
 };
 
 const CITY_BOUNDS: L.LatLngBoundsExpression = [[22.30, 111.00], [23.40, 112.60]];
-const HIGH_DETAIL_BOUNDS = L.latLngBounds([22.90, 112.00], [22.96, 112.09]);
 
 function App() {
   const mapRef = useRef<L.Map | null>(null);
@@ -149,6 +148,7 @@ function App() {
   const [incidents, setIncidents] = useState<DbIncident[]>([]);
   const [configs, setConfigs] = useState<CaseTypeItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tileUrl, setTileUrl] = useState<string | null>(null);
 
   // 2. 状态控制
   const [selectedDistrict, setSelectedDistrict] = useState<keyof typeof DISTRICTS>('city');
@@ -198,6 +198,17 @@ function App() {
 
   // 动态加载数据库的 JSON 数据
   useEffect(() => {
+    const fallbackTile = './tiles/gaode/{z}/{x}/{y}.png';
+    fetch('./map-config.json')
+      .then(res => (res.ok ? res.json() : {}))
+      .then((cfg: { tileUrl?: string }) => {
+        const raw = (typeof cfg.tileUrl === 'string' && cfg.tileUrl.includes('{z}'))
+          ? cfg.tileUrl
+          : fallbackTile;
+        setTileUrl(raw.replace(/\{host\}/g, window.location.hostname || '127.0.0.1'));
+      })
+      .catch(() => setTileUrl(fallbackTile));
+
     Promise.all([
       fetch('./case_type_config.json').then(res => {
         if (!res.ok) throw new Error("加载 case_type_config 失败");
@@ -235,7 +246,7 @@ function App() {
 
   // 1. 初始化地图组件
   useEffect(() => {
-    if (mapRef.current) return;
+    if (mapRef.current || !tileUrl) return;
 
     // 默认限制在云浮市全市域范围
     const map = L.map('map', {
@@ -253,7 +264,7 @@ function App() {
     const transparentTile = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
     // 1. 全市域中低精度瓦片图层 (12-13 级)
-    const lowZoomLayer = L.tileLayer('./tiles/gaode/{z}/{x}/{y}.png', {
+    const lowZoomLayer = L.tileLayer(tileUrl, {
       minZoom: 12,
       maxZoom: 13,
       bounds: [[22.36, 111.05], [23.32, 112.52]], // 限制在全市域
@@ -265,11 +276,11 @@ function App() {
     });
 
     // 2. 云城区市中心高精度瓦片图层 (14-18 级)
-    const highZoomLayer = L.tileLayer('./tiles/gaode/{z}/{x}/{y}.png', {
+    const highZoomLayer = L.tileLayer(tileUrl, {
       minZoom: 14,
       maxZoom: 18,
-      bounds: [[22.91, 112.01], [22.95, 112.08]], // 严格限制在已下载的云城区核心区
-      attribution: '&copy; 云浮市中心巡防高精底图'
+      bounds: [[22.36, 111.05], [23.32, 112.52]], // 全市 14-18 级
+      attribution: '&copy; 云浮市局立体巡防管控底图'
     }).addTo(map);
 
     highZoomLayer.on('tileerror', (e: any) => {
@@ -311,7 +322,7 @@ function App() {
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [tileUrl]);
 
   // 监听滤镜控制
   useEffect(() => {
@@ -588,7 +599,7 @@ function App() {
     if (!mapRef.current) return;
     const [mapLat, mapLng] = getMapLatLng(c.lngofcriterion, c.latofcriterion);
     const target = L.latLng(mapLat, mapLng);
-    const targetZoom = HIGH_DETAIL_BOUNDS.contains(target) ? 16 : 13;
+    const targetZoom = 16;
     mapRef.current.flyTo(target, targetZoom, { animate: true, duration: 1 });
     
     setTimeout(() => {

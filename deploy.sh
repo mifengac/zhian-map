@@ -15,11 +15,13 @@ else
     exit 1
 fi
 
-# 2. 创建瓦片挂载文件夹
-echo "[2/3] 初始化本地离线瓦片挂载点..."
-mkdir -p ./tiles
-echo "💡 提示: 请将下载的云浮市 XYZ 瓦片数据放置在当前文件夹的 ./tiles/ 目录下。"
-echo "   结构应类似于: ./tiles/{z}/{x}/{y}.png"
+# 2. 底图已拆到 zhian-tiles :5099，本容器只挂数据文件
+echo "[2/3] 检查 map-config.json（底图 URL）..."
+if [ ! -f "map-config.json" ]; then
+    echo '{"tileUrl":"http://{host}:5099/tiles/gaode/{z}/{x}/{y}.png"}' > map-config.json
+    echo "已生成默认 map-config.json，指向本机 :5099 的 zhian-tiles"
+fi
+echo "💡 底图服务必须已部署：zhian-tiles 端口 5099。改 IP 只改 map-config.json 后刷新页面即可。"
 
 # 3. 运行容器
 echo "[3/3] 启动 Docker 运行容器..."
@@ -34,15 +36,15 @@ fi
 docker run -d \
   --name yf-map-system \
   -p 5007:80 \
-  -v "$(pwd)/tiles:/usr/share/nginx/html/tiles" \
   -v "$(pwd)/incidents.json:/usr/share/nginx/html/incidents.json" \
   -v "$(pwd)/case_type_config.json:/usr/share/nginx/html/case_type_config.json" \
+  -v "$(pwd)/map-config.json:/usr/share/nginx/html/map-config.json" \
   --restart always \
   yf-map:latest
 
 echo "=========================================="
 echo "🎉 部署指令执行完成！"
 echo "👉 访问系统：http://[服务器内网IP]:5007"
-echo "📂 瓦片目录：$(pwd)/tiles"
+echo "🗺️  底图：zhian-tiles :5099（map-config.json）"
 echo "📝 查看日志：docker logs -f yf-map-system"
 echo "=========================================="
