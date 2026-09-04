@@ -49,3 +49,11 @@ tiles/
 
 # Debug and test screenshots
 screenshot.png
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 交接文档是活文件，不进版本库
+HANDOFF.md
+CLAUDE_HANDOFF.md

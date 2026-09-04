@@ -1,0 +1,46 @@
+# 构建上下文体积控制：不排除 incidents.json / case_type_config.json / map-config.json / public/，
+# 这些是 npm run build 产物需要的文件，会被 Vite 拷进 dist/。
+
+# 离线瓦片目录，几十万张 PNG，几个 GB，绝对不能进构建上下文
+tiles/
+
+# 打包/镜像归档
+*.tar
+*.tar.gz
+
+# 依赖与构建产物（容器内会重新 npm install / npm run build）
+node_modules/
+dist/
+dist-ssr/
+
+# Python 缓存与脚本无关产物
+__pycache__/
+*.pyc
+
+# 版本控制与本地开发工具目录
+.git/
+.vscode/
+.idea/
+
+# 日志与截图
+*.log
+screenshot.png
+
+# 根目录下的杂图，不影响 public/ 下的 svg 等构建资源
+*.png
+*.jpg
+*.jpeg
+
+# 环境变量与交接文档，不应进镜像
+.env
+.env.local
+.env.*.local
+HANDOFF.md
+CLAUDE_HANDOFF.md
+*.md
+
+# 本次任务提示词文件
+20260903_*.md
+
+# skills 是指向仓库外的符号链接，构建不需要
+skills

@@ -81,6 +81,51 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* 右侧面板顶部“警情数据流水检索”小标题，比 .header-box 更紧凑、无分割线 */
+.header-box--plain {
+  padding: 15px 20px 5px 20px;
+  border-bottom: none;
+  background: none;
+}
+.header-title--sm {
+  font-size: 16px;
+}
+
+/* 右侧面板搜索框 */
+.search-box {
+  padding: 0 20px 10px 20px;
+}
+.search-input-wrapper {
+  position: relative;
+}
+.search-input {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+.search-input-icon {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  color: #64748b;
+}
+
+/* 新增打标弹窗内的坐标预览 */
+.coord-preview {
+  font-size: 11px;
+  color: #10b981;
+  background: #0f172a;
+  padding: 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
 /* 侧边栏内容滚动区域 */
 .sidebar-content {
   flex: 1;
@@ -159,6 +204,21 @@ body {
   font-size: 11px;
   color: #94a3b8;
 }
+
+/* 数据总览卡片：首项跨两列高亮 + 大号数值 */
+.stat-item--highlight {
+  grid-column: span 2;
+  background: rgba(56, 189, 248, 0.05);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.stat-val--total {
+  color: #38bdf8;
+  font-size: 28px;
+}
+
+.stat-val--valid { color: #4ade80; }
+.stat-val--invalid { color: #f87171; }
 
 /* 地图区域 */
 .map-container {
@@ -321,7 +381,7 @@ body {
 
 .alarm-desc {
   font-size: 12px;
-  color: #cbd5e1;
+  color: #e2e8f0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -331,6 +391,13 @@ body {
   font-size: 11px;
   color: #94a3b8;
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.alarm-location-place {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -358,9 +425,53 @@ body {
   position: absolute;
   top: 20px;
   left: 20px;
+  right: 20px;
   z-index: 1000;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+  max-width: calc(100% - 40px);
+}
+
+/* 底图故障提示条 */
+.map-config-banner {
+  position: absolute;
+  top: 70px;
+  left: 20px;
+  right: 20px;
+  max-width: 640px;
+  margin: 0 auto;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(127, 29, 29, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #fecaca;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.map-config-banner span {
+  flex: 1;
+}
+
+.map-config-banner-close {
+  background: transparent;
+  border: none;
+  color: #fecaca;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  opacity: 0.8;
+}
+
+.map-config-banner-close:hover {
+  opacity: 1;
 }
 
 .overlay-btn {
@@ -460,7 +571,9 @@ body {
   width: 100%;
   height: 100%;
   background: rgba(11, 15, 25, 0.7);
-  z-index: 1001;
+  /* 必须压住所有地图浮层（Leaflet 控件 z-index:1200、故障提示条 1100 等），
+     否则弹窗时缩放控件会穿透显示在遮罩上面，还能被误点 */
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -485,6 +598,11 @@ body {
 
 .form-group {
   margin-bottom: 12px;
+}
+
+/* 需要给下拉选项做绝对定位锚点的表单组 */
+.form-group--dropdown {
+  position: relative;
 }
 
 .form-group label {
@@ -732,8 +850,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  left: 400px;
-  right: 400px;
+  /* 相对地图容器（.map-container）定位，不是相对整个屏幕，
+     所以这里只需要给地图区域内部留白，不用再减两个侧栏的宽度 */
+  left: 20px;
+  right: 20px;
+  max-width: 1100px;
+  margin: 0 auto;
 }
 .timeline-header {
   display: flex;
@@ -810,11 +932,58 @@ body {
 .timeline-indicator {
   font-size: 11px;
   color: #94a3b8;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.timeline-indicator-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .time-highlight {
   color: #38bdf8;
   font-weight: 700;
+}
+/* 当前时段警情数量徽标：有数据/无数据两种状态，原来是内联 style 按条件切换背景色 */
+.time-highlight--ok,
+.time-highlight--empty {
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.time-highlight--ok {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+.time-highlight--empty {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.timeline-empty-hint {
+  font-size: 11px;
+  color: #f59e0b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 时间轴卡片内的离线底图说明（原来是地图区域左下角单独浮层，会和时间轴卡片打架） */
+.timeline-footnote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #cbd5e1;
+  padding-top: 8px;
+  border-top: 1px solid rgba(51, 65, 85, 0.4);
+}
+.timeline-footnote-highlight {
+  color: #10b981;
+  font-weight: bold;
 }
 
 /* Custom Charts */
@@ -1055,4 +1224,51 @@ body {
   background: #38bdf8;
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
   cursor: pointer;
+}
+
+/* ===== 响应式布局 =====
+   两侧边栏原来写死 380px，窄屏下会把地图和时间轴卡片挤没。
+   这里只调整侧栏宽度/呈现方式，不动配色和字体。 */
+@media (max-width: 1600px) {
+  .sidebar,
+  .right-panel {
+    width: 320px;
+  }
+
+  /* 侧栏收窄到 320px 后，20px 字号的主标题会在字中间断行，调小字号+letter-spacing 保证单行 */
+  .sidebar .header-title {
+    font-size: 15px;
+    letter-spacing: 0.5px;
+  }
+
+  /* 地图变窄后，顶部 5 个按钮 + 区域下拉容易挤不下换行，缩小内边距/字号让它们仍能排在同一行 */
+  .map-overlay-tools {
+    gap: 6px;
+  }
+  .overlay-btn {
+    padding: 6px 8px;
+    font-size: 11px;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .sidebar {
+    width: 280px;
+  }
+
+  /* 右侧详情面板改成覆盖式浮层，脱离 flex 布局，把宽度让给地图 */
+  .right-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    z-index: 1500;
+  }
+}
+
+/* 保险：不管 .map-overlay-tools 换不换行，Leaflet 自带的缩放控件永远盖在最上层，不被浮动工具栏挡住/截获点击 */
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 1200;
 }

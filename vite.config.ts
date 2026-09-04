@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 const tilesRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'tiles')
 
 function serveOfflineTiles(): Plugin {
-  const attach = (server: { middlewares: { use: (path: string, fn: Function) => void } }) => {
+  const attach = (server: { middlewares: { use: (...args: any[]) => void } }) => {
     server.middlewares.use('/tiles', (req: { url?: string }, res: any, next: () => void) => {
       const rel = decodeURIComponent((req.url || '').split('?')[0]).replace(/^\/+/, '')
       if (!rel || rel.includes('..')) {

@@ -21,7 +21,9 @@ import {
   Pause,
   ChevronDown,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import './App.css';
 
@@ -143,12 +145,16 @@ function App() {
   const heatmapLayerRef = useRef<any | null>(null);
   const boundaryLayerRef = useRef<L.FeatureGroup | null>(null);
   const policeLayerRef = useRef<L.LayerGroup | null>(null);
+  // 底图故障探测：短时间内瓦片连续失败的时间戳
+  const tileErrorTimestampsRef = useRef<number[]>([]);
 
   // 1. 数据配置
   const [incidents, setIncidents] = useState<DbIncident[]>([]);
   const [configs, setConfigs] = useState<CaseTypeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
+  // 底图故障提示：map-config.json 加载失败，或瓦片连续报错超过阈值
+  const [mapConfigError, setMapConfigError] = useState<string | null>(null);
 
   // 2. 状态控制
   const [selectedDistrict, setSelectedDistrict] = useState<keyof typeof DISTRICTS>('city');
@@ -199,15 +205,20 @@ function App() {
   // 动态加载数据库的 JSON 数据
   useEffect(() => {
     const fallbackTile = './tiles/gaode/{z}/{x}/{y}.png';
+    const MAP_CONFIG_ERROR_MSG = '底图未配置，或 zhian-tiles(:5099) 未启动';
     fetch('./map-config.json')
-      .then(res => (res.ok ? res.json() : {}))
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`请求 map-config.json 失败: HTTP ${res.status}`))))
       .then((cfg: { tileUrl?: string }) => {
-        const raw = (typeof cfg.tileUrl === 'string' && cfg.tileUrl.includes('{z}'))
-          ? cfg.tileUrl
-          : fallbackTile;
-        setTileUrl(raw.replace(/\{host\}/g, window.location.hostname || '127.0.0.1'));
+        if (typeof cfg.tileUrl !== 'string' || !cfg.tileUrl.includes('{z}')) {
+          throw new Error('map-config.json 缺少合法的 tileUrl 字段（需包含 {z}/{x}/{y} 占位符）');
+        }
+        setTileUrl(cfg.tileUrl.replace(/\{host\}/g, window.location.hostname || '127.0.0.1'));
       })
-      .catch(() => setTileUrl(fallbackTile));
+      .catch(err => {
+        console.error('[zhian-map] 底图配置加载失败，已退回相对路径兜底：', err);
+        setMapConfigError(MAP_CONFIG_ERROR_MSG);
+        setTileUrl(fallbackTile);
+      });
 
     Promise.all([
       fetch('./case_type_config.json').then(res => {
@@ -263,6 +274,20 @@ function App() {
     // 透明 1x1 像素占位符，用来平滑替代加载失败（404）的瓦片，防止地图上显示裂图图标
     const transparentTile = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
+    // 短时间内瓦片连续失败超过阈值，判定底图服务不可用，弹出提示条
+    const TILE_ERROR_THRESHOLD = 20;
+    const TILE_ERROR_WINDOW_MS = 10000;
+    const handleTileError = () => {
+      const now = Date.now();
+      const timestamps = tileErrorTimestampsRef.current.filter(t => now - t < TILE_ERROR_WINDOW_MS);
+      timestamps.push(now);
+      tileErrorTimestampsRef.current = timestamps;
+      if (timestamps.length >= TILE_ERROR_THRESHOLD) {
+        console.error(`[zhian-map] 瓦片连续加载失败 ${timestamps.length} 次（${TILE_ERROR_WINDOW_MS / 1000}s 内），疑似 zhian-tiles(:5099) 未启动或不可达`);
+        setMapConfigError('底图未配置，或 zhian-tiles(:5099) 未启动');
+      }
+    };
+
     // 1. 全市域中低精度瓦片图层 (12-13 级)
     const lowZoomLayer = L.tileLayer(tileUrl, {
       minZoom: 12,
@@ -273,6 +298,7 @@ function App() {
 
     lowZoomLayer.on('tileerror', (e: any) => {
       e.tile.src = transparentTile;
+      handleTileError();
     });
 
     // 2. 云城区市中心高精度瓦片图层 (14-18 级)
@@ -285,6 +311,7 @@ function App() {
 
     highZoomLayer.on('tileerror', (e: any) => {
       e.tile.src = transparentTile;
+      handleTileError();
     });
 
     tileLayerRef.current = lowZoomLayer;
@@ -748,18 +775,18 @@ function App() {
           <section className="card">
             <h3 className="card-title"><Activity size={16} /> 警情综合态势</h3>
             <div className="stats-grid">
-              <div className="stat-item" style={{ gridColumn: 'span 2', background: 'rgba(56, 189, 248, 0.05)', borderColor: 'rgba(56,189,248,0.2)' }}>
-                <div className="stat-val" style={{ color: '#38bdf8', fontSize: '28px' }}>{totalCount}</div>
+              <div className="stat-item stat-item--highlight">
+                <div className="stat-val stat-val--total">{totalCount}</div>
                 <div className="stat-lbl">当前过滤结果总数</div>
               </div>
               <div className="stat-item">
-                <div className="stat-val" style={{ color: '#4ade80' }}>
+                <div className="stat-val stat-val--valid">
                   {qualityStats["有效案情"] || 0}
                 </div>
                 <div className="stat-lbl">高价值有效警情</div>
               </div>
               <div className="stat-item">
-                <div className="stat-val" style={{ color: '#f87171' }}>
+                <div className="stat-val stat-val--invalid">
                   {(qualityStats["低质量"] || 0) + (qualityStats["无有效信息"] || 0)}
                 </div>
                 <div className="stat-lbl">低质/空处置流水</div>
@@ -770,9 +797,9 @@ function App() {
           {/* 核心需求：配置与分类控制 */}
           <section className="card">
             <h3 className="card-title"><Filter size={16} /> 警情映射与类型筛选</h3>
-            
+
             {/* 多选下拉框控件 */}
-            <div className="form-group" style={{ position: 'relative', marginBottom: '12px' }}>
+            <div className="form-group form-group--dropdown">
               <label>警情性质配置分类 (ywdata.case_type_config)</label>
               <div 
                 className="custom-dropdown-trigger"
@@ -840,7 +867,7 @@ function App() {
             <h3 className="card-title"><Settings size={16} style={{ color: '#38bdf8' }} /> 时空范围精细研判</h3>
             
             {/* 日期范围选择 */}
-            <div className="form-group" style={{ marginBottom: '12px' }}>
+            <div className="form-group">
               <label>日期范围过滤 (年-月-日)</label>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input 
@@ -876,7 +903,7 @@ function App() {
             </div>
 
             {/* 时段范围选择 */}
-            <div className="form-group" style={{ marginBottom: '12px' }}>
+            <div className="form-group">
               <label>接警时段范围 (24小时制)</label>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <select
@@ -1020,6 +1047,22 @@ function App() {
       <main className="map-container">
         <div id="map"></div>
 
+        {/* 底图故障提示：map-config.json 加载失败，或瓦片连续报错超过阈值 */}
+        {mapConfigError && (
+          <div className="map-config-banner">
+            <AlertTriangle size={14} />
+            <span>{mapConfigError}</span>
+            <button
+              className="map-config-banner-close"
+              onClick={() => setMapConfigError(null)}
+              aria-label="关闭提示"
+              title="关闭提示"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* 顶部悬浮控制栏 */}
         <div className="map-overlay-tools">
           <button 
@@ -1116,7 +1159,7 @@ function App() {
             <span className="slider-label">23:00</span>
           </div>
 
-          <div className="timeline-indicator" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <div className="timeline-indicator">
             <div>
               当前展示: {selectedHour === 'all' ? (
                 <span className="time-highlight">全天累计（或左侧设定时空段）</span>
@@ -1124,45 +1167,26 @@ function App() {
                 <span className="time-highlight">{selectedHour.toString().padStart(2, '0')}:00 - {selectedHour.toString().padStart(2, '0')}:59 时段</span>
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="time-highlight" style={{ 
-                backgroundColor: filteredIncidents.length > 0 ? 'rgba(56,189,248,0.15)' : 'rgba(239,68,68,0.15)', 
-                color: filteredIncidents.length > 0 ? '#38bdf8' : '#ef4444', 
-                border: filteredIncidents.length > 0 ? '1px solid rgba(56,189,248,0.2)' : '1px solid rgba(239,68,68,0.2)'
-              }}>
+            <div className="timeline-indicator-right">
+              <span className={`time-highlight ${filteredIncidents.length > 0 ? 'time-highlight--ok' : 'time-highlight--empty'}`}>
                 当前时段警情: {filteredIncidents.length} 起
               </span>
               {filteredIncidents.length === 0 && (
-                <span style={{ fontSize: '11px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="timeline-empty-hint">
                   ⚠️ 该时段暂无符合筛选条件的警情
                 </span>
               )}
             </div>
           </div>
-        </div>
 
-        {/* 坐标自适应说明 */}
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          zIndex: 1000,
-          background: 'rgba(15, 23, 42, 0.85)',
-          border: '1px solid rgba(51, 65, 85, 0.6)',
-          padding: '8px 12px',
-          borderRadius: '6px',
-          fontSize: '11px',
-          color: '#cbd5e1',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          backdropFilter: 'blur(5px)'
-        }}>
-          <Info size={12} style={{ color: '#38bdf8' }} />
-          <span>离线底图模式: </span>
-          <span style={{ color: '#10b981', fontWeight: 'bold' }}>
-            本地高德切片 (已自动开启 CGCS2000 坐标系自适应对齐)
-          </span>
+          {/* 坐标自适应说明：原来是地图区域左下角单独浮层，和本卡片同高会打架，现并入时间轴卡片内 */}
+          <div className="timeline-footnote">
+            <Info size={12} style={{ color: '#38bdf8' }} />
+            <span>离线底图模式: </span>
+            <span className="timeline-footnote-highlight">
+              本地高德切片 (已自动开启 CGCS2000 坐标系自适应对齐)
+            </span>
+          </div>
         </div>
 
         {/* 打标提示 */}
@@ -1180,7 +1204,7 @@ function App() {
               
               <div className="form-group">
                 <label>标准空间经纬度 (CGCS2000 / WGS84)</label>
-                <div style={{ fontSize: '11px', color: '#10b981', background: '#0f172a', padding: '6px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                <div className="coord-preview">
                   经度: {tempLatLng.lng.toFixed(6)}<br />
                   纬度: {tempLatLng.lat.toFixed(6)}
                 </div>
@@ -1243,37 +1267,27 @@ function App() {
       {/* 右侧面板 */}
       <aside className="right-panel">
         {/* 警情实时检索 */}
-        <div className="header-box" style={{ padding: '15px 20px 5px 20px', borderBottom: 'none', background: 'none' }}>
-          <h3 className="header-title" style={{ fontSize: '16px', color: '#38bdf8' }}>
+        <div className="header-box header-box--plain">
+          <h3 className="header-title header-title--sm">
             <Search size={18} /> 警情数据流水检索
           </h3>
         </div>
 
-        <div style={{ padding: '0 20px 10px 20px' }}>
-          <div style={{ position: 'relative' }}>
-            <input 
-              type="text" 
-              placeholder="搜索警情流水、报警内容、派出所..." 
+        <div className="search-box">
+          <div className="search-input-wrapper">
+            <input
+              type="text"
+              placeholder="搜索警情流水、报警内容、派出所..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px 8px 32px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid rgba(51, 65, 85, 0.5)',
-                borderRadius: '6px',
-                color: 'white',
-                fontSize: '12px',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
+              className="search-input"
             />
-            <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: '#64748b' }} />
+            <Search size={14} className="search-input-icon" />
           </div>
         </div>
 
         {/* 警情列表 */}
-        <div className="right-panel-content" style={{ flex: selectedIncident ? '0.4' : '1', overflowY: 'auto' }}>
+        <div className="right-panel-content" style={{ flex: selectedIncident ? '0.4' : '1' }}>
           <div className="alarm-list-container">
             {filteredIncidents.map(c => {
               const style = getStyleForIncident(c);
@@ -1289,9 +1303,9 @@ function App() {
                     </span>
                     <span className="alarm-time">{c.calltime.substring(11, 16)}</span>
                   </div>
-                  <div className="alarm-desc" style={{ color: '#e2e8f0' }}>{c.casecontents}</div>
-                  <div className="alarm-location" style={{ justifyContent: 'space-between' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div className="alarm-desc">{c.casecontents}</div>
+                  <div className="alarm-location">
+                    <span className="alarm-location-place">
                       <MapPin size={11} style={{ color: '#38bdf8' }} />
                       <span>{c.dutydeptname}</span>
                     </span>
