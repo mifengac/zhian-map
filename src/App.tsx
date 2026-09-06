@@ -264,7 +264,7 @@ function App() {
       center: DISTRICTS.city.center,
       zoom: DISTRICTS.city.zoom,
       minZoom: 12,
-      maxZoom: 18,
+      maxZoom: 19,
       maxBounds: CITY_BOUNDS,
       zoomControl: false
     });
@@ -301,11 +301,11 @@ function App() {
       handleTileError();
     });
 
-    // 2. 云城区市中心高精度瓦片图层 (14-18 级)
+    // 2. 云城区市中心高精度瓦片图层 (14-19 级)
     const highZoomLayer = L.tileLayer(tileUrl, {
       minZoom: 14,
-      maxZoom: 18,
-      bounds: [[22.36, 111.05], [23.32, 112.52]], // 全市 14-18 级
+      maxZoom: 19,
+      bounds: [[22.36, 111.05], [23.32, 112.52]], // 全市 14-19 级
       attribution: '&copy; 云浮市局立体巡防管控底图'
     }).addTo(map);
 
